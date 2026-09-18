@@ -40,6 +40,20 @@
 	</organization>
 
 	<profiles>
+		<!-- On Apple Silicon run the tests against the aarch64 JNI library. -->
+		<profile>
+			<id>native-macos-arm64</id>
+			<activation>
+				<os>
+					<family>mac</family>
+					<arch>aarch64</arch>
+				</os>
+			</activation>
+			<properties>
+				<factpp.native.dir>${project.build.directory}/classes/lib/native/arm64</factpp.native.dir>
+			</properties>
+		</profile>
+
 		<profile>
 			<id>release-sign-artifacts</id>
 			<activation>
@@ -54,7 +68,7 @@
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-gpg-plugin</artifactId>
-						<version>1.4</version>
+						<version>3.2.4</version>
 						<executions>
 							<execution>
 								<id>sign-artifacts</id>
@@ -68,7 +82,7 @@
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-source-plugin</artifactId>
-						<version>2.1.2</version>
+						<version>3.3.1</version>
 						<executions>
 							<execution>
 								<id>attach-sources</id>
@@ -88,7 +102,7 @@
 			<plugin>
 				<groupId>org.apache.felix</groupId>
 				<artifactId>maven-bundle-plugin</artifactId>
-				<version>2.5.3</version>
+				<version>5.1.9</version>
 				<extensions>true</extensions>
 				<configuration>
 					<instructions>
@@ -105,6 +119,8 @@
 						  org.semanticweb.owl.owlapi</Require-Bundle>
 
 						<Bundle-NativeCode>
+							lib/native/arm64/libFaCTPlusPlusJNI.jnilib;
+								osname=MacOSX ; osname=Mac OS X ; processor=aarch64 ; processor=arm64 ,
 							lib/native/64bit/FaCTPlusPlusJNI.dll;
 								osname=WindowsNT ; osname=Windows NT ; osname=WinNT ; osname=WindowsXP ; osname=Windows XP ; osname=WinXP ; osname=WindowsVista ; osname=Windows Vista ; osname=Windows2003 ; osname=Windows2008 ; osname=Windows 7 ; osname=Windows 8 ; osname=Windows 8.1 ; processor=x86_64 ; processor = amd64 ,
 							lib/native/32bit/FaCTPlusPlusJNI.dll;
@@ -120,9 +136,15 @@
 						</Bundle-NativeCode>
 
 						<Export-Package>{local-packages}</Export-Package>
-						<Import-Package>org.protege.*, javax.*, org.w3c.dom.*,
-							org.semanticweb.owlapi.*, uk.ac.manchester.cs.owl.owlapi.*,
-							com.google.common.collect, gnu.trove, gnu.trove.*</Import-Package>
+						<!-- The Protege and OWL API packages are supplied through Require-Bundle
+						     above, so bnd deliberately omits Import-Package entries for them.
+						     One OWL API package is imported explicitly to keep a version range
+						     in the manifest, so the plug-in refuses to resolve against anything
+						     other than OWL API 4.5.x (what Protege 5.6.9 ships). -->
+						<!-- !java.* first: java.* is always delegated to the boot class loader
+						     and must never appear in Import-Package. The trailing * lets bnd
+						     pick up anything else it detects. -->
+						<Import-Package>!java.*, uk.ac.manchester.cs.owlapi.modularity, javax.*, *</Import-Package>
 					</instructions>
 				</configuration>
 				<executions>
@@ -141,10 +163,12 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.2</version>
+				<version>3.13.0</version>
 				<configuration>
-					<source>1.7</source>
-					<target>1.7</target>
+					<!-- Built with JDK 17 but targeting ${maven.compiler.release} bytecode:
+					     Protege 5.6.9's platform-specific bundles still ship a JRE 11, so
+					     the plug-in must stay loadable there as well as on Java 17+. -->
+					<release>${maven.compiler.release}</release>
 					<encoding>UTF-8</encoding>
 				</configuration>
 			</plugin>
@@ -153,7 +177,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-source-plugin</artifactId>
-				<version>2.2.1</version>
+				<version>3.3.1</version>
 				<executions>
 					<execution>
 						<id>attach-sources</id>
@@ -168,9 +192,12 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-javadoc-plugin</artifactId>
-				<version>2.8.1</version>
+				<version>3.6.3</version>
 				<configuration>
 					<show>public</show>
+					<!-- JDK 17's javadoc runs doclint by default and the existing
+					     comments do not satisfy it; keep javadoc non-fatal. -->
+					<doclint>none</doclint>
 				</configuration>
 				<executions>
 					<execution>
@@ -185,17 +212,19 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>2.17</version>
+				<version>3.2.5</version>
 				<configuration>
-					<forkMode>once</forkMode>
+					<!-- forkMode was removed in Surefire 3.x -->
+					<forkCount>1</forkCount>
+					<reuseForks>true</reuseForks>
 					<printSummary>false</printSummary>
-					<argLine>-Xmx1024M -Djava.awt.headless=true -Djava.library.path=${project.build.directory}/classes/lib/native/64bit</argLine>
+					<argLine>-Xmx1024M -Djava.awt.headless=true -Djava.library.path=${factpp.native.dir}</argLine>
 				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.sonatype.plugins</groupId>
 				<artifactId>nexus-staging-maven-plugin</artifactId>
-				<version>1.6.5</version>
+				<version>1.6.13</version>
 				<extensions>true</extensions>
 				<configuration>
 					<serverId>ossrh</serverId>
@@ -209,31 +238,58 @@
 	<!-- Specify the encoding of the source files. -->
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+		<!-- OWL API shipped by Protege 5.6.x (5.6.9 uses owlapi-osgidistribution 4.5.29) -->
+		<owlapi.version>4.5.29</owlapi.version>
+		<!-- Latest Protege release published to Maven Central; API-compatible with the
+		     5.6.9 desktop release, and only needed to compile the optional
+		     uk.ac.manchester.cs.factplusplus.protege classes. -->
+		<protege.version>5.6.6</protege.version>
+
+		<!-- Bytecode level. 11 keeps the plug-in loadable by the JRE 11 bundled in the
+		     platform-specific Protege 5.6.9 distributions while still running on
+		     Java 17+. Override with -Dmaven.compiler.release=17 if you only ever run
+		     Protege on an external JDK 17 or newer. -->
+		<maven.compiler.release>11</maven.compiler.release>
+
+		<!-- Directory searched for the JNI library when running the tests. Defaults to the
+		     historical 64bit directory (Linux/Windows x86_64, Intel macOS); the
+		     native-macos-arm64 profile below switches it to arm64 on Apple Silicon.
+		     Override with -Dfactpp.native.dir=... to test a different build. -->
+		<factpp.native.dir>${project.build.directory}/classes/lib/native/64bit</factpp.native.dir>
 	</properties>
 
 	<dependencies>
 		<dependency>
 			<groupId>net.sourceforge.owlapi</groupId>
 			<artifactId>owlapi-distribution</artifactId>
-			<version>4.3.1</version>
+			<version>${owlapi.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>edu.stanford.protege</groupId>
-			<artifactId>org.protege.editor.owl</artifactId>
-			<version>4.3.0</version>
+			<artifactId>protege-editor-owl</artifactId>
+			<version>${protege.version}</version>
 			<optional>true</optional>
+			<exclusions>
+				<!-- Protege pulls in owlapi-osgidistribution; keep the single OWL API
+				     copy declared above on the compile classpath. -->
+				<exclusion>
+					<groupId>net.sourceforge.owlapi</groupId>
+					<artifactId>owlapi-osgidistribution</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
-			<version>4.12</version>
+			<version>4.13.2</version>
 			<scope>test</scope>
 		</dependency>
 		<!-- Silence slf4j missing class warning. -->
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-nop</artifactId>
-			<version>1.7.22</version>
+			<version>1.7.36</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

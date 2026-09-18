@@ -15,7 +15,12 @@ Require-Bundle: org.protege.common,
  org.protege.editor.core.application,
  org.protege.editor.owl,
  org.semanticweb.owl.owlapi
-Bundle-NativeCode: lib/native/64bit/FaCTPlusPlusJNI.dll;
+Bundle-NativeCode: lib/native/arm64/libFaCTPlusPlusJNI.jnilib;
+ osname=MacOSX ;
+ osname=Mac OS X ;
+ processor=aarch64 ;
+ processor=arm64 ,
+ lib/native/64bit/FaCTPlusPlusJNI.dll;
  osname=win ;
  osname=WindowsNT ;
  osname=Windows NT ;
