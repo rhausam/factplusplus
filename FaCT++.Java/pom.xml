@@ -119,7 +119,8 @@
 						  org.semanticweb.owl.owlapi</Require-Bundle>
 
 						<!-- One clause per shipped binary, 64-bit only: Protege 5.6.9 needs Java 11+,
-						     which has no 32-bit builds for these platforms.
+						     which has no 32-bit builds for these platforms. macOS is Apple
+						     Silicon only; on Intel Macs the bundle does not resolve.
 						     Felix (Protege's OSGi framework) normalises the values: Apple Silicon and
 						     ARM64 Linux report processor "aarch64" ("arm64" would mean 32-bit ARM);
 						     Windows 10 is "windows10", while Windows 11 / Server 2022+ fall back to
@@ -127,8 +128,6 @@
 						<Bundle-NativeCode>
 							lib/native/arm64/libFaCTPlusPlusJNI.jnilib;
 								osname=MacOSX ; osname=Mac OS X ; processor=aarch64 ,
-							lib/native/64bit/libFaCTPlusPlusJNI.jnilib;
-								osname=MacOSX ; osname=Mac OS X ; processor=x86_64 ,
 							lib/native/arm64/libFaCTPlusPlusJNI.so;
 								osname=Linux ; processor=aarch64 ,
 							lib/native/64bit/libFaCTPlusPlusJNI.so;
@@ -256,7 +255,7 @@
 		<maven.compiler.release>11</maven.compiler.release>
 
 		<!-- Directory searched for the JNI library when running the tests. Defaults to the
-		     64bit directory (Linux/Windows x86_64, Intel macOS); the native-arm64
+		     64bit directory (Linux/Windows x86_64); the native-arm64
 		     profile switches it to arm64 on aarch64 hosts.
 		     Override with -Dfactpp.native.dir=... to test a different build. -->
 		<factpp.native.dir>${project.build.directory}/classes/lib/native/64bit</factpp.native.dir>

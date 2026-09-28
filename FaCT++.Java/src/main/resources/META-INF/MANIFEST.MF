@@ -19,10 +19,6 @@ Bundle-NativeCode: lib/native/arm64/libFaCTPlusPlusJNI.jnilib;
  osname=MacOSX ;
  osname=Mac OS X ;
  processor=aarch64 ,
- lib/native/64bit/libFaCTPlusPlusJNI.jnilib;
- osname=MacOSX ;
- osname=Mac OS X ;
- processor=x86_64 ,
  lib/native/arm64/libFaCTPlusPlusJNI.so;
  osname=Linux ;
  processor=aarch64 ,

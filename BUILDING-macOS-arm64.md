@@ -98,8 +98,10 @@ workflow) and the tests run on Java 11, 17, 21 and 25 on every platform:
 
 The Linux libraries link the C++ runtime statically and need only glibc; the Windows DLL
 needs no Visual C++ Redistributable. The run's `native-libraries` artifact holds all of
-them in the resources layout, ready to commit. The Intel macOS library
-(`lib/native/64bit/libFaCTPlusPlusJNI.jnilib`) is still a prebuilt copy.
+them in the resources layout, ready to commit.
+
+There is no Intel macOS library: on an Intel Mac the plug-in bundle does not resolve and
+FaCT++ is simply absent from Protégé's reasoner list.
 
 32-bit binaries are no longer shipped: Protégé 5.6.9 needs Java 11+, which has no 32-bit
 builds for these platforms.
