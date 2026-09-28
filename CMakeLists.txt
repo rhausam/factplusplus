@@ -1,16 +1,26 @@
-cmake_minimum_required(VERSION 2.8.11)
+cmake_minimum_required(VERSION 3.10...3.27)
 project(factplusplus)
 
 # global definition
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(FPP_USE_LOGGING "Switch on FaCT++ internal logging" OFF)
+
+# On macOS default to the host architecture unless the caller asks for
+# something else (e.g. -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" for a fat build).
+if (APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+	set(CMAKE_OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}" CACHE STRING "macOS build architectures" FORCE)
+endif()
 
 # define warnings/optimisaiton flags for GCC/CLANG compilers
 if (NOT MSVC)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -ffast-math -fPIC -fomit-frame-pointer")
-	# Additional warnings (from GCC 6.2)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wpedantic -Wsuggest-override")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wpedantic")
+	# -Wsuggest-override is GCC-only; clang spells the equivalent -Winconsistent-missing-override
+	if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsuggest-override")
+	endif()
 else()
 	# Set exception handling in VC++
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")

@@ -16,4 +16,6 @@ pipelines:
           # build a project
           - cmake --build . --config Release -- -j3
           # make Java build and tests
-          - mvn -f ../FaCT++.Java -o clean install
+          # NB: not offline (-o) any more - the OWL API 4.5.29 / Protege 5.6.x
+          # dependencies are not pre-seeded in the build image's local repository.
+          - mvn -f ../FaCT++.Java clean install

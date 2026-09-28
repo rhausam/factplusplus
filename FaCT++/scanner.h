@@ -33,9 +33,9 @@ class TsScanner: public CommonScanner
 {
 protected:	// methods
 		/// fill buffer with name in '|'-s; c should be starting '|'
-	void FillNameBuffer ( register char c );
+	void FillNameBuffer ( char c );
 		/// fill buffer with legal ID chars, starting from c
-	void FillBuffer ( register char c );
+	void FillBuffer ( char c );
 		/// check if given character is legal in ID
 	bool isLegalIdChar ( char c ) const;
 
