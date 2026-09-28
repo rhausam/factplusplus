@@ -30,7 +30,8 @@ cmake --build build -j8
 ```
 
 On macOS `CMAKE_OSX_ARCHITECTURES` defaults to the host architecture, so this produces
-arm64 binaries. For a universal build:
+arm64 binaries, and `CMAKE_OSX_DEPLOYMENT_TARGET` defaults to 11.0 so they also load on
+older macOS releases (check with `otool -l <file> | grep minos`). For a universal build:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
@@ -80,3 +81,24 @@ points the tests' `java.library.path` at `lib/native/arm64`.
 
 Copy `FaCT++.Java/target/factplusplus-*.jar` into the Protégé `plugins/` directory
 (inside `Protégé.app/Contents/plugins` on macOS) and restart Protégé.
+
+## Other platforms: CI
+
+`.github/workflows/build.yml` builds the JNI library for every shipped platform on each
+push to `master` and each pull request, runs the Java tests against it on that platform,
+and assembles the plug-in jar:
+
+| Platform | Built on | Resource path |
+| --- | --- | --- |
+| Linux x86_64 | manylinux_2_28 container | `lib/native/64bit/libFaCTPlusPlusJNI.so` |
+| Linux aarch64 | manylinux_2_28 container | `lib/native/arm64/libFaCTPlusPlusJNI.so` |
+| Windows x64 | MSVC, static runtime | `lib/native/64bit/FaCTPlusPlusJNI.dll` |
+| macOS arm64 | macOS 14 runner | `lib/native/arm64/libFaCTPlusPlusJNI.jnilib` |
+
+The Linux libraries link the C++ runtime statically and need only glibc; the Windows DLL
+needs no Visual C++ Redistributable. The run's `native-libraries` artifact holds all of
+them in the resources layout, ready to commit. The Intel macOS library
+(`lib/native/64bit/libFaCTPlusPlusJNI.jnilib`) is still a prebuilt copy.
+
+32-bit binaries are no longer shipped: Protégé 5.6.9 needs Java 11+, which has no 32-bit
+builds for these platforms.

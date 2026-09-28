@@ -1,0 +1,209 @@
+# Builds the FaCT++ JNI library for every platform the Protege plug-in ships,
+# runs the Java test suite against each one on its own OS, and assembles the
+# plug-in jar with all of them inside.
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: native (${{ matrix.id }})
+    runs-on: ${{ matrix.os }}
+    # Linux builds run in manylinux_2_28 images so the libraries only need glibc
+    # 2.28 or older at run time, i.e. they load on essentially any current distro.
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            dir: 64bit
+            built: build/FaCT++.JNI/libFaCTPlusPlusJNI.so
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            dir: arm64
+            built: build/FaCT++.JNI/libFaCTPlusPlusJNI.so
+          - id: windows-x86_64
+            os: windows-2022
+            dir: 64bit
+            built: build/FaCT++.JNI/Release/FaCTPlusPlusJNI.dll
+          - id: macos-arm64
+            os: macos-14
+            dir: arm64
+            built: build/FaCT++.JNI/libFaCTPlusPlusJNI.jnilib
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JDK 17 (JNI headers, manylinux)
+        if: matrix.container
+        run: |
+          dnf install -q -y java-17-openjdk-devel
+          echo "JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")" >> "$GITHUB_ENV"
+
+      - name: Install JDK 17 (JNI headers)
+        if: '!matrix.container'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        # Link the C++ runtime statically: only glibc remains as a dependency.
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          "-DCMAKE_MODULE_LINKER_FLAGS=-static-libstdc++ -static-libgcc"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        # Static MSVC runtime (/MT): no Visual C++ Redistributable needed.
+        run: cmake -S . -B build -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Inspect (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          file ${{ matrix.built }}
+          ldd ${{ matrix.built }}
+          echo "newest glibc symbol: $(objdump -T ${{ matrix.built }} | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+          if ldd ${{ matrix.built }} | grep -q 'libstdc++\|libgcc_s'; then
+            echo "::error::C++ runtime is linked dynamically"; exit 1
+          fi
+
+      - name: Inspect (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $deps = & $dumpbin.FullName /nologo /dependents "${{ matrix.built }}" | Out-String
+          $deps
+          if ($deps -match 'VCRUNTIME|MSVCP') { Write-Error "MSVC runtime is linked dynamically"; exit 1 }
+
+      - name: Inspect (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          lipo -archs ${{ matrix.built }}
+          otool -L ${{ matrix.built }}
+          otool -l ${{ matrix.built }} | grep -A4 LC_BUILD_VERSION
+
+      - name: Stage JNI library
+        shell: bash
+        run: |
+          mkdir -p stage/lib/native/${{ matrix.dir }}
+          cp ${{ matrix.built }} stage/lib/native/${{ matrix.dir }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.id }}
+          path: stage/
+          if-no-files-found: error
+
+  test:
+    name: test (${{ matrix.id }}, Java ${{ matrix.java }})
+    needs: native
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit, java: '17' }
+          - { id: linux-aarch64,  os: ubuntu-24.04-arm, dir: arm64, java: '17' }
+          - { id: windows-x86_64, os: windows-2022,     dir: 64bit, java: '17' }
+          - { id: macos-arm64,    os: macos-14,         dir: arm64, java: '17' }
+          # The plug-in is compiled for Java 11 (Protege's bundled JRE) and must also
+          # run on the newest LTS.
+          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit, java: '11' }
+          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit, java: '21' }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            ${{ matrix.java }}
+            17
+          cache: maven
+          cache-dependency-path: FaCT++.Java/pom.xml
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-${{ matrix.id }}
+          path: FaCT++.Java/src/main/resources
+
+      # Always build with JDK 17 (the last one setup-java installed); for the other
+      # Java versions run the tests on that JDK through Surefire's jvm setting.
+      - name: Test
+        shell: bash
+        run: |
+          args=()
+          if [ "${{ matrix.java }}" != 17 ]; then
+            var="JAVA_HOME_${{ matrix.java }}_X64"
+            args+=("-Djvm=${!var}/bin/java")
+          fi
+          mvn -B -f FaCT++.Java verify -Dmaven.javadoc.skip=true \
+            "-Dfactpp.native.dir=$GITHUB_WORKSPACE/FaCT++.Java/target/classes/lib/native/${{ matrix.dir }}" \
+            "${args[@]}"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: surefire-${{ matrix.id }}-java${{ matrix.java }}
+          path: FaCT++.Java/target/surefire-reports/
+
+  package:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: FaCT++.Java/pom.xml
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: FaCT++.Java/src/main/resources
+
+      - name: Build plug-in
+        run: mvn -B -f FaCT++.Java package -DskipTests
+
+      - name: Native libraries in the jar
+        run: unzip -l FaCT++.Java/target/factplusplus-*-SNAPSHOT.jar 'lib/native/*'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factplusplus-plugin
+          path: FaCT++.Java/target/factplusplus-*-SNAPSHOT.jar
+
+      # All freshly built libraries in the resources layout, ready to commit.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-libraries
+          path: FaCT++.Java/src/main/resources/lib/

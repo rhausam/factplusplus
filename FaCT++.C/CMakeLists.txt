@@ -6,6 +6,8 @@ set(SOURCE_FILES
 )
 
 add_library(fact SHARED ${SOURCE_FILES})
+# fact.h marks the API __declspec(dllexport) only when this is defined (Windows)
+target_compile_definitions(fact PRIVATE FPP_BUILD_SHARED)
 target_link_libraries(fact LINK_PUBLIC Kernel)
 
 add_executable(fact_test test.c)

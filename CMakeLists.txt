@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.10...3.27)
+
+# Oldest macOS the binaries will load on; must be set before project(). 11.0 is the
+# first release on Apple Silicon. Without it the SDK's own version is used, and the
+# JNI library would refuse to load on anything older than the build machine.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+
 project(factplusplus)
 
 # global definition
