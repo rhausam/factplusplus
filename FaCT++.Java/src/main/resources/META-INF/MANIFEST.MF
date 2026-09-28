@@ -18,73 +18,22 @@ Require-Bundle: org.protege.common,
 Bundle-NativeCode: lib/native/arm64/libFaCTPlusPlusJNI.jnilib;
  osname=MacOSX ;
  osname=Mac OS X ;
- processor=aarch64 ;
- processor=arm64 ,
- lib/native/64bit/FaCTPlusPlusJNI.dll;
- osname=win ;
- osname=WindowsNT ;
- osname=Windows NT ;
- osname=WinNT ;
- osname=WindowsXP ;
- osname=Windows XP ;
- osname=WinXP ;
- osname=WindowsVista ;
- osname=Windows Vista ;
- osname=Windows2003 ;
- osname=Windows2008 ;
- osname=Win7 ;
- osname=Windows7 ;
- osname=Windows 7 ;
- osname=Win8 ;
- osname=Windows8 ;
- osname=Windows 8 ;
- osname=Windows8.1 ;
- osname=Windows 8.1 ;
- processor=x86_64 ;
- processor=amd64 ,
- lib/native/32bit/FaCTPlusPlusJNI.dll;
- osname=win ;
- osname=Windows95 ;
- osname=Windows 95 ;
- osname=Win95 ;
- osname=Windows98 ;
- osname=Windows 98 ;
- osname=Win98 ;
- osname=WindowsNT ;
- osname=Windows NT ;
- osname=WinNT ;
- osname=WindowsCE ;
- osname=Windows CE ;
- osname=WinCE ;
- osname=WindowsXP ;
- osname=Windows XP ;
- osname=WinXP ;
- osname=WindowsVista ;
- osname=Windows Vista ;
- osname=Windows2003 ;
- osname=Windows2008 ;
- osname=Win7 ;
- osname=Windows7 ;
- osname=Windows 7 ;
- osname=Win8 ;
- osname=Windows8 ;
- osname=Windows 8 ;
- osname=Windows8.1 ;
- osname=Windows 8.1 ;
- processor=i386 ;
- processor=x86 ,
- lib/native/64bit/libFaCTPlusPlusJNI.so;
- osname=Linux ;
- processor=x86_64 ;
- processor=amd64 ,
- lib/native/32bit/libFaCTPlusPlusJNI.so;
- osname=Linux ;
- processor=i386 ,
+ processor=aarch64 ,
  lib/native/64bit/libFaCTPlusPlusJNI.jnilib;
  osname=MacOSX ;
  osname=Mac OS X ;
  processor=x86_64 ,
- lib/native/32bit/libFaCTPlusPlusJNI.jnilib;
- osname=MacOSX ;
- osname=Mac OS X ;
- processor=i386
+ lib/native/arm64/libFaCTPlusPlusJNI.so;
+ osname=Linux ;
+ processor=aarch64 ,
+ lib/native/64bit/libFaCTPlusPlusJNI.so;
+ osname=Linux ;
+ processor=x86_64 ,
+ lib/native/64bit/FaCTPlusPlusJNI.dll;
+ osname=win32 ;
+ osname=Windows 10 ;
+ osname=Windows Server 2016 ;
+ osname=Windows Server 2019 ;
+ osname=Windows 8 ;
+ osname=Windows 7 ;
+ processor=x86_64

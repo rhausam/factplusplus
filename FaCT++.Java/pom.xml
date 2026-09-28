@@ -40,12 +40,12 @@
 	</organization>
 
 	<profiles>
-		<!-- On Apple Silicon run the tests against the aarch64 JNI library. -->
+		<!-- On aarch64 hosts (Apple Silicon, ARM64 Linux) run the tests against the
+		     arm64 JNI library. -->
 		<profile>
-			<id>native-macos-arm64</id>
+			<id>native-arm64</id>
 			<activation>
 				<os>
-					<family>mac</family>
 					<arch>aarch64</arch>
 				</os>
 			</activation>
@@ -118,21 +118,24 @@
 						 org.protege.editor.owl,
 						  org.semanticweb.owl.owlapi</Require-Bundle>
 
+						<!-- One clause per shipped binary, 64-bit only: Protege 5.6.9 needs Java 11+,
+						     which has no 32-bit builds for these platforms.
+						     Felix (Protege's OSGi framework) normalises the values: Apple Silicon and
+						     ARM64 Linux report processor "aarch64" ("arm64" would mean 32-bit ARM);
+						     Windows 10 is "windows10", while Windows 11 / Server 2022+ fall back to
+						     "win32". -->
 						<Bundle-NativeCode>
 							lib/native/arm64/libFaCTPlusPlusJNI.jnilib;
-								osname=MacOSX ; osname=Mac OS X ; processor=aarch64 ; processor=arm64 ,
-							lib/native/64bit/FaCTPlusPlusJNI.dll;
-								osname=WindowsNT ; osname=Windows NT ; osname=WinNT ; osname=WindowsXP ; osname=Windows XP ; osname=WinXP ; osname=WindowsVista ; osname=Windows Vista ; osname=Windows2003 ; osname=Windows2008 ; osname=Windows 7 ; osname=Windows 8 ; osname=Windows 8.1 ; processor=x86_64 ; processor = amd64 ,
-							lib/native/32bit/FaCTPlusPlusJNI.dll;
-								osname=Windows95 ; osname=Windows 95 ; osname=Win95 ; osname=Windows98 ; osname=Windows 98 ; osname=Win98 ; osname=WindowsNT ; osname=Windows NT ; osname=WinNT ; osname=WindowsCE ; osname=Winndows CE ; osname=WinCE ; osname=WindowsXP ; osname=Windows XP ; osname=WinXP ; osname=WindowsVista ; osname=Windows Vista ; osname=Windows2003 ; osname=Windows2008 ; osname=Windows 7 ; osname=Windows 8 ; osname=Windows 8.1 ; processor = i386 ; processor = x86 ,
-							lib/native/64bit/libFaCTPlusPlusJNI.so;
-								osname=Linux ; processor=x86_64 ; processor=amd64 ,
-							lib/native/32bit/libFaCTPlusPlusJNI.so;
-								osname=Linux ; processor=i386 ,
+								osname=MacOSX ; osname=Mac OS X ; processor=aarch64 ,
 							lib/native/64bit/libFaCTPlusPlusJNI.jnilib;
-								osname=MacOSX ; osname=Mac OS X ; processor=ppc64 ; processor=x86_64 ,
-							lib/native/32bit/libFaCTPlusPlusJNI.jnilib;
-								osname=MacOSX ; osname=Mac OS X ; processor=ppc ; processor=i386
+								osname=MacOSX ; osname=Mac OS X ; processor=x86_64 ,
+							lib/native/arm64/libFaCTPlusPlusJNI.so;
+								osname=Linux ; processor=aarch64 ,
+							lib/native/64bit/libFaCTPlusPlusJNI.so;
+								osname=Linux ; processor=x86_64 ,
+							lib/native/64bit/FaCTPlusPlusJNI.dll;
+								osname=win32 ; osname=Windows 10 ; osname=Windows Server 2016 ; osname=Windows Server 2019 ;
+								osname=Windows 8 ; osname=Windows 7 ; processor=x86_64
 						</Bundle-NativeCode>
 
 						<Export-Package>{local-packages}</Export-Package>
@@ -165,7 +168,7 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>3.13.0</version>
 				<configuration>
-					<!-- Built with JDK 17 but targeting ${maven.compiler.release} bytecode:
+					<!-- Built with any JDK 17+ (CI uses 21) but targeting ${maven.compiler.release} bytecode:
 					     Protege 5.6.9's platform-specific bundles still ship a JRE 11, so
 					     the plug-in must stay loadable there as well as on Java 17+. -->
 					<release>${maven.compiler.release}</release>
@@ -195,7 +198,7 @@
 				<version>3.6.3</version>
 				<configuration>
 					<show>public</show>
-					<!-- JDK 17's javadoc runs doclint by default and the existing
+					<!-- Modern javadoc runs doclint by default and the existing
 					     comments do not satisfy it; keep javadoc non-fatal. -->
 					<doclint>none</doclint>
 				</configuration>
@@ -253,8 +256,8 @@
 		<maven.compiler.release>11</maven.compiler.release>
 
 		<!-- Directory searched for the JNI library when running the tests. Defaults to the
-		     historical 64bit directory (Linux/Windows x86_64, Intel macOS); the
-		     native-macos-arm64 profile below switches it to arm64 on Apple Silicon.
+		     64bit directory (Linux/Windows x86_64, Intel macOS); the native-arm64
+		     profile switches it to arm64 on aarch64 hosts.
 		     Override with -Dfactpp.native.dir=... to test a different build. -->
 		<factpp.native.dir>${project.build.directory}/classes/lib/native/64bit</factpp.native.dir>
 	</properties>

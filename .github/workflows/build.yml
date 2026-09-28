@@ -1,0 +1,239 @@
+# Builds the FaCT++ JNI library for every platform the Protege plug-in ships,
+# runs the Java test suite against each one on its own OS, and assembles the
+# plug-in jar with all of them inside.
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # JDK that builds the plug-in (and supplies jni.h). The bytecode level is set
+  # separately by maven.compiler.release in the pom, so this can move freely.
+  BUILD_JAVA: '21'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: native (${{ matrix.id }})
+    runs-on: ${{ matrix.os }}
+    # Linux builds run in manylinux_2_28 images so the libraries only need glibc
+    # 2.28 or older at run time, i.e. they load on essentially any current distro.
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            dir: 64bit
+            built: build/FaCT++.JNI/libFaCTPlusPlusJNI.so
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            dir: arm64
+            built: build/FaCT++.JNI/libFaCTPlusPlusJNI.so
+          - id: windows-x86_64
+            os: windows-2022
+            dir: 64bit
+            built: build/FaCT++.JNI/Release/FaCTPlusPlusJNI.dll
+          - id: macos-arm64
+            os: macos-14
+            dir: arm64
+            built: build/FaCT++.JNI/libFaCTPlusPlusJNI.jnilib
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JDK (JNI headers, manylinux)
+        if: matrix.container
+        run: |
+          dnf install -q -y "java-$BUILD_JAVA-openjdk-devel"
+          echo "JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")" >> "$GITHUB_ENV"
+
+      - name: Install JDK (JNI headers)
+        if: '!matrix.container'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.BUILD_JAVA }}
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        # Link the C++ runtime statically: only glibc remains as a dependency.
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          "-DCMAKE_MODULE_LINKER_FLAGS=-static-libstdc++ -static-libgcc"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        # Static MSVC runtime (/MT): no Visual C++ Redistributable needed.
+        run: cmake -S . -B build -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Inspect (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          file ${{ matrix.built }}
+          ldd ${{ matrix.built }}
+          echo "newest glibc symbol: $(objdump -T ${{ matrix.built }} | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+          if ldd ${{ matrix.built }} | grep -q 'libstdc++\|libgcc_s'; then
+            echo "::error::C++ runtime is linked dynamically"; exit 1
+          fi
+
+      - name: Inspect (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $deps = & $dumpbin.FullName /nologo /dependents "${{ matrix.built }}" | Out-String
+          $deps
+          if ($deps -match 'VCRUNTIME|MSVCP') { Write-Error "MSVC runtime is linked dynamically"; exit 1 }
+
+      - name: Inspect (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          lipo -archs ${{ matrix.built }}
+          otool -L ${{ matrix.built }}
+          otool -l ${{ matrix.built }} | grep -A4 LC_BUILD_VERSION
+
+      - name: Stage JNI library
+        shell: bash
+        run: |
+          mkdir -p stage/lib/native/${{ matrix.dir }}
+          cp ${{ matrix.built }} stage/lib/native/${{ matrix.dir }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.id }}
+          path: stage/
+          if-no-files-found: error
+
+  test:
+    name: test (${{ matrix.platform.id }}, Java ${{ matrix.java }})
+    needs: native
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit }
+          - { id: linux-aarch64,  os: ubuntu-24.04-arm, dir: arm64 }
+          - { id: windows-x86_64, os: windows-2022,     dir: 64bit }
+          - { id: macos-arm64,    os: macos-14,         dir: arm64 }
+        # Every LTS Protege 5.6.9 supports: 11 is the JRE its platform bundles ship
+        # (and the plug-in's bytecode level), 25 the newest.
+        java: ['11', '17', '21', '25']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            ${{ matrix.java }}
+            ${{ env.BUILD_JAVA }}
+          cache: maven
+          cache-dependency-path: FaCT++.Java/pom.xml
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-${{ matrix.platform.id }}
+          path: FaCT++.Java/src/main/resources
+
+      # Build with BUILD_JAVA (the last JDK setup-java installed, so it is JAVA_HOME);
+      # for any other Java version, run the tests on that JDK through Surefire's jvm
+      # setting. setup-java exports each JDK as JAVA_HOME_<version>_<X64|ARM64>.
+      - name: Test
+        shell: bash
+        run: |
+          args=()
+          if [ "${{ matrix.java }}" != "$BUILD_JAVA" ]; then
+            var="JAVA_HOME_${{ matrix.java }}_${{ runner.arch }}"
+            exe=""; [ "$RUNNER_OS" = Windows ] && exe=".exe"
+            args+=("-Djvm=${!var}/bin/java$exe")
+          fi
+          mvn -B -f FaCT++.Java verify -Dmaven.javadoc.skip=true \
+            "-Dfactpp.native.dir=$GITHUB_WORKSPACE/FaCT++.Java/target/classes/lib/native/${{ matrix.platform.dir }}" \
+            "${args[@]}"
+
+      # The pom turns Surefire's own summary off, so report the totals here and check
+      # the tests really ran, on the intended Java version.
+      - name: Test summary
+        shell: bash
+        run: |
+          "$(command -v python3 || command -v python)" - "${{ matrix.java }}" <<'EOF'
+          import glob, os, sys, xml.etree.ElementTree as ET
+          tests = failures = errors = skipped = 0
+          version = None
+          for name in glob.glob('FaCT++.Java/target/surefire-reports/TEST-*.xml'):
+              suite = ET.parse(name).getroot()
+              tests += int(suite.get('tests')); failures += int(suite.get('failures'))
+              errors += int(suite.get('errors')); skipped += int(suite.get('skipped'))
+              for p in suite.iter('property'):
+                  if version is None and p.get('name') == 'java.version':
+                      version = p.get('value')
+          line = f"tests={tests} failures={failures} errors={errors} skipped={skipped}, Java {version}"
+          print(line)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write(f"**${{ matrix.platform.id }}, Java ${{ matrix.java }}**: {line}\n")
+          if tests == 0 or (version or '').split('.')[0] != sys.argv[1]:
+              sys.exit(f"::error::expected tests to run on Java {sys.argv[1]}")
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: surefire-${{ matrix.platform.id }}-java${{ matrix.java }}
+          path: FaCT++.Java/target/surefire-reports/
+
+  package:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.BUILD_JAVA }}
+          cache: maven
+          cache-dependency-path: FaCT++.Java/pom.xml
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: FaCT++.Java/src/main/resources
+
+      - name: Build plug-in
+        run: mvn -B -f FaCT++.Java package -DskipTests
+
+      - name: Native libraries in the jar
+        run: unzip -l FaCT++.Java/target/factplusplus-*-SNAPSHOT.jar 'lib/native/*'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factplusplus-plugin
+          path: FaCT++.Java/target/factplusplus-*-SNAPSHOT.jar
+
+      # All freshly built libraries in the resources layout, ready to commit.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-libraries
+          path: FaCT++.Java/src/main/resources/lib/
