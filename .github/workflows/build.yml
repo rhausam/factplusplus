@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # JDK that builds the plug-in (and supplies jni.h). The bytecode level is set
+  # separately by maven.compiler.release in the pom, so this can move freely.
+  BUILD_JAVA: '21'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -48,18 +53,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install JDK 17 (JNI headers, manylinux)
+      - name: Install JDK (JNI headers, manylinux)
         if: matrix.container
         run: |
-          dnf install -q -y java-17-openjdk-devel
+          dnf install -q -y "java-$BUILD_JAVA-openjdk-devel"
           echo "JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")" >> "$GITHUB_ENV"
 
-      - name: Install JDK 17 (JNI headers)
+      - name: Install JDK (JNI headers)
         if: '!matrix.container'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ env.BUILD_JAVA }}
 
       - name: Configure (Linux)
         if: runner.os == 'Linux'
@@ -120,21 +125,20 @@ jobs:
           if-no-files-found: error
 
   test:
-    name: test (${{ matrix.id }}, Java ${{ matrix.java }})
+    name: test (${{ matrix.platform.id }}, Java ${{ matrix.java }})
     needs: native
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit, java: '17' }
-          - { id: linux-aarch64,  os: ubuntu-24.04-arm, dir: arm64, java: '17' }
-          - { id: windows-x86_64, os: windows-2022,     dir: 64bit, java: '17' }
-          - { id: macos-arm64,    os: macos-14,         dir: arm64, java: '17' }
-          # The plug-in is compiled for Java 11 (Protege's bundled JRE) and must also
-          # run on the newest LTS.
-          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit, java: '11' }
-          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit, java: '21' }
+        platform:
+          - { id: linux-x86_64,   os: ubuntu-24.04,     dir: 64bit }
+          - { id: linux-aarch64,  os: ubuntu-24.04-arm, dir: arm64 }
+          - { id: windows-x86_64, os: windows-2022,     dir: 64bit }
+          - { id: macos-arm64,    os: macos-14,         dir: arm64 }
+        # Every LTS Protege 5.6.9 supports: 11 is the JRE its platform bundles ship
+        # (and the plug-in's bytecode level), 25 the newest.
+        java: ['11', '17', '21', '25']
     steps:
       - uses: actions/checkout@v4
 
@@ -143,27 +147,29 @@ jobs:
           distribution: temurin
           java-version: |
             ${{ matrix.java }}
-            17
+            ${{ env.BUILD_JAVA }}
           cache: maven
           cache-dependency-path: FaCT++.Java/pom.xml
 
       - uses: actions/download-artifact@v4
         with:
-          name: native-${{ matrix.id }}
+          name: native-${{ matrix.platform.id }}
           path: FaCT++.Java/src/main/resources
 
-      # Always build with JDK 17 (the last one setup-java installed); for the other
-      # Java versions run the tests on that JDK through Surefire's jvm setting.
+      # Build with BUILD_JAVA (the last JDK setup-java installed, so it is JAVA_HOME);
+      # for any other Java version, run the tests on that JDK through Surefire's jvm
+      # setting. setup-java exports each JDK as JAVA_HOME_<version>_<X64|ARM64>.
       - name: Test
         shell: bash
         run: |
           args=()
-          if [ "${{ matrix.java }}" != 17 ]; then
-            var="JAVA_HOME_${{ matrix.java }}_X64"
-            args+=("-Djvm=${!var}/bin/java")
+          if [ "${{ matrix.java }}" != "$BUILD_JAVA" ]; then
+            var="JAVA_HOME_${{ matrix.java }}_${{ runner.arch }}"
+            exe=""; [ "$RUNNER_OS" = Windows ] && exe=".exe"
+            args+=("-Djvm=${!var}/bin/java$exe")
           fi
           mvn -B -f FaCT++.Java verify -Dmaven.javadoc.skip=true \
-            "-Dfactpp.native.dir=$GITHUB_WORKSPACE/FaCT++.Java/target/classes/lib/native/${{ matrix.dir }}" \
+            "-Dfactpp.native.dir=$GITHUB_WORKSPACE/FaCT++.Java/target/classes/lib/native/${{ matrix.platform.dir }}" \
             "${args[@]}"
 
       # The pom turns Surefire's own summary off, so report the totals here and check
@@ -185,7 +191,7 @@ jobs:
           line = f"tests={tests} failures={failures} errors={errors} skipped={skipped}, Java {version}"
           print(line)
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
-              out.write(f"**${{ matrix.id }}, Java ${{ matrix.java }}**: {line}\n")
+              out.write(f"**${{ matrix.platform.id }}, Java ${{ matrix.java }}**: {line}\n")
           if tests == 0 or (version or '').split('.')[0] != sys.argv[1]:
               sys.exit(f"::error::expected tests to run on Java {sys.argv[1]}")
           EOF
@@ -193,7 +199,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: surefire-${{ matrix.id }}-java${{ matrix.java }}
+          name: surefire-${{ matrix.platform.id }}-java${{ matrix.java }}
           path: FaCT++.Java/target/surefire-reports/
 
   package:
@@ -205,7 +211,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ env.BUILD_JAVA }}
           cache: maven
           cache-dependency-path: FaCT++.Java/pom.xml
 

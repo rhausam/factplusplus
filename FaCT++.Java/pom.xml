@@ -168,7 +168,7 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>3.13.0</version>
 				<configuration>
-					<!-- Built with JDK 17 but targeting ${maven.compiler.release} bytecode:
+					<!-- Built with any JDK 17+ (CI uses 21) but targeting ${maven.compiler.release} bytecode:
 					     Protege 5.6.9's platform-specific bundles still ship a JRE 11, so
 					     the plug-in must stay loadable there as well as on Java 17+. -->
 					<release>${maven.compiler.release}</release>
@@ -198,7 +198,7 @@
 				<version>3.6.3</version>
 				<configuration>
 					<show>public</show>
-					<!-- JDK 17's javadoc runs doclint by default and the existing
+					<!-- Modern javadoc runs doclint by default and the existing
 					     comments do not satisfy it; keep javadoc non-fatal. -->
 					<doclint>none</doclint>
 				</configuration>

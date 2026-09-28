@@ -4,7 +4,7 @@
 
 * macOS on Apple Silicon (tested on an M3, Darwin 27)
 * CMake >= 3.10, Apple clang with C++17
-* JDK 17 (used to *build*; see the bytecode note below)
+* JDK 17 or newer to *build* (CI uses 21; tested up to 25). See the bytecode note below.
 * Maven 3.9+
 
 ## Toolchain notes
@@ -16,10 +16,10 @@ If `clang` reports *"You have not agreed to the Xcode license agreements"*, eith
 export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 ```
 
-Point Maven and CMake's `find_package(JNI)` at JDK 17:
+Point Maven and CMake's `find_package(JNI)` at a JDK, e.g. 21:
 
 ```sh
-export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 ```
 
 ## Native build
@@ -61,14 +61,14 @@ mvn -f FaCT++.Java clean install
 The `native-macos-arm64` Maven profile activates automatically on Apple Silicon and
 points the tests' `java.library.path` at `lib/native/arm64`.
 
-## Versions and the Java 11 / 17 split
+## Versions: build JDK vs. bytecode level
 
 * OWL API is **4.5.29** — the exact version Protégé 5.6.9 ships.
 * The Protégé compile-time dependency is **5.6.6**, the newest release published to
   Maven Central. It is API-compatible with the 5.6.9 desktop release and is `optional`,
   so it is not part of the plug-in's runtime closure — Protégé supplies those bundles
   through `Require-Bundle`.
-* The plug-in is **built with JDK 17 but emits Java 11 bytecode**
+* The plug-in is **built with a current JDK but emits Java 11 bytecode**
   (`maven.compiler.release=11`). The platform-specific Protégé 5.6.9 distributions
   still bundle their own Temurin **JRE 11** (a universal arm64/x86_64 build, so it runs
   natively on Apple Silicon). Targeting 11 keeps the plug-in loadable there *and* on
@@ -86,7 +86,8 @@ Copy `FaCT++.Java/target/factplusplus-*.jar` into the Protégé `plugins/` direc
 
 `.github/workflows/build.yml` builds the JNI library for every shipped platform on each
 push to `master` and each pull request, runs the Java tests against it on that platform,
-and assembles the plug-in jar:
+and assembles the plug-in jar. The plug-in is built with JDK 21 (`BUILD_JAVA` in the
+workflow) and the tests run on Java 11, 17, 21 and 25 on every platform:
 
 | Platform | Built on | Resource path |
 | --- | --- | --- |
@@ -102,3 +103,16 @@ them in the resources layout, ready to commit. The Intel macOS library
 
 32-bit binaries are no longer shipped: Protégé 5.6.9 needs Java 11+, which has no 32-bit
 builds for these platforms.
+
+## Running Protégé on Java 24+
+
+JDK 24 and newer warn when a JNI library is loaded (JEP 472), and a future JDK will
+refuse unless native access is enabled. When running Protégé on such a JDK, add this to
+`~/.Protege/conf/jvm.conf`:
+
+```
+append=--enable-native-access=ALL-UNNAMED
+```
+
+Only do this when Protégé runs on Java 17 or newer: Java 11, including the JRE bundled
+with the platform-specific Protégé downloads, rejects the option and will not start.
