@@ -166,6 +166,30 @@ jobs:
             "-Dfactpp.native.dir=$GITHUB_WORKSPACE/FaCT++.Java/target/classes/lib/native/${{ matrix.dir }}" \
             "${args[@]}"
 
+      # The pom turns Surefire's own summary off, so report the totals here and check
+      # the tests really ran, on the intended Java version.
+      - name: Test summary
+        shell: bash
+        run: |
+          "$(command -v python3 || command -v python)" - "${{ matrix.java }}" <<'EOF'
+          import glob, os, sys, xml.etree.ElementTree as ET
+          tests = failures = errors = skipped = 0
+          version = None
+          for name in glob.glob('FaCT++.Java/target/surefire-reports/TEST-*.xml'):
+              suite = ET.parse(name).getroot()
+              tests += int(suite.get('tests')); failures += int(suite.get('failures'))
+              errors += int(suite.get('errors')); skipped += int(suite.get('skipped'))
+              for p in suite.iter('property'):
+                  if version is None and p.get('name') == 'java.version':
+                      version = p.get('value')
+          line = f"tests={tests} failures={failures} errors={errors} skipped={skipped}, Java {version}"
+          print(line)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write(f"**${{ matrix.id }}, Java ${{ matrix.java }}**: {line}\n")
+          if tests == 0 or (version or '').split('.')[0] != sys.argv[1]:
+              sys.exit(f"::error::expected tests to run on Java {sys.argv[1]}")
+          EOF
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
